@@ -1,0 +1,7 @@
+# SPECIFY PATHS AS ABSOLUTE PATHS
+
+path_to_mnist=D:\uni\thesis\learning_ann\data\raw\fashion-mnist-784-euclidean.hdf5
+path_to_sift=D:\uni\thesis\learning_ann\data\raw\sift-128-euclidean.hdf5
+path_to_knn_matrix=D:\uni\thesis\learning_ann\data
+path_to_models=D:\uni\thesis\learning_ann\data\models
+path_to_tensors=D:\uni\thesis\learning_ann
