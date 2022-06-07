@@ -1,8 +1,7 @@
-
 import matplotlib.pyplot as plt
-
-
 import time
+import torch
+import argparse
 
 
 def get_test_accuracy(model_forest, knn, X_test, k, batch_size=1024, bin_count_param=1, models_path=None):
@@ -14,14 +13,6 @@ def get_test_accuracy(model_forest, knn, X_test, k, batch_size=1024, bin_count_p
         return
     # assert isinstance(root_model, Model)
 
-
-    inference_list = torch.empty((0), device='cuda', dtype=int)
-
-
-    # n = X.shape[0]  # total no of points in dataset
-
-    # FIND CANDIDATE SET OF QUERY POINT START
-    start_time = time.time()
     
 
 
@@ -30,6 +21,8 @@ def get_test_accuracy(model_forest, knn, X_test, k, batch_size=1024, bin_count_p
 
 
     query_bins, scores, dataset_bins = model_forest.infer(X_test, batch_size, bin_count_param, models_path)
+
+    print('----- MODEL INFERENCE DONE ------- ')
 
 
     
@@ -43,7 +36,7 @@ def get_test_accuracy(model_forest, knn, X_test, k, batch_size=1024, bin_count_p
 
     single_model = model_forest.trees[0].root.model
 
-    print('no of parameterss in one model: {}'.format(sum(p.numel() for p in single_model.parameters())))
+    print('no of parameters in one model: {}'.format(sum(p.numel() for p in single_model.parameters())))
 
     n_trees = model_forest.n_trees
 
@@ -52,14 +45,13 @@ def get_test_accuracy(model_forest, knn, X_test, k, batch_size=1024, bin_count_p
     torch.cuda.empty_cache()
         
 
-
+    print('----- CALCULATING K-NN RECALL FOR EACH POINT ------- ')
 
     for num_models in range(n_trees):
     # for num_models in range(n_trees- 1, n_trees): # TAKING ALL TREES AT ONCE
 
         accuracies = []
         
-        # X = list(range(n_bins))
         X = []
 
     
@@ -70,38 +62,21 @@ def get_test_accuracy(model_forest, knn, X_test, k, batch_size=1024, bin_count_p
             num_knns = torch.randn(n_q, 1)
             candidate_set_sizes = torch.randn(n_q, 1)
 
-            c1_time = time.time()
-
-            t1_time = c1_time - start_time
-
-            running_time = t1_time
-
 
             print("%d models, %d bins "%(num_models + 1, bin_count))
             print()
 
-            max_is = []
 
             for point in range(n_q):
                 c2_time = time.time()
 
                 print('\rpoint ' + str(point) + ' / ' + str(n_q), end='')
-
-                max_val = -1
                 max_i = -1
                
 
                 max_i = torch.argmax(scores[:(num_models+1)], 0)[point].flatten()
-                # print('max i: {}'.format(max_i))
 
-                max_is.append(max_i)
-                # print('query bins shape ', query_bins.shape)
                 assigned_bins = query_bins[max_i, point, :].flatten()
-
-
-
-                # print('assigned bins ', assigned_bins)
-                # print('inf list max i ', inference_list[max_i])
 
                 all_points_bins.append(assigned_bins[0].item())
 
@@ -131,8 +106,6 @@ def get_test_accuracy(model_forest, knn, X_test, k, batch_size=1024, bin_count_p
 
                 overlap = candidate_set_size + knn_points_size - uniques_size
 
-                # print('overlap ', overlap)
-
                 num_knns[point] = overlap
                 
                 candidate_set_sizes[point] = candidate_set_size
@@ -146,13 +119,12 @@ def get_test_accuracy(model_forest, knn, X_test, k, batch_size=1024, bin_count_p
             accuracy = num_knns / k
             print()
 
-            min_index = torch.argmin(accuracy)
-
             accuracy = torch.mean(accuracy)
 
-            print('mean acc ', accuracy)
+            print('mean accuracy ', accuracy)
             candidate_set_size = torch.mean(candidate_set_sizes)
-            print("candidate set size", candidate_set_size)
+            print("mean candidate set size", candidate_set_size)
+            print()
 
             accuracies.append(accuracy.item()) # for each bin_count
 
@@ -170,14 +142,56 @@ def get_test_accuracy(model_forest, knn, X_test, k, batch_size=1024, bin_count_p
 
         print("candidate_set_size of first bin on average")
         print(X[0])
-        # print(accuracies[1])
-        print(X, accuracies)
-        print(ensemble_cand_set_sizes, ensemble_accuracies)
 
         for m, acc in enumerate(ensemble_accuracies):
             
             plt.plot(ensemble_cand_set_sizes[m], acc, label="no of models: " + str(m+1))
         plt.legend()
+        plt.title("Average k-NN Recall vs Candidate Set Size")
         plt.show()
 
     return all_points_bins, ensemble_cand_set_sizes, ensemble_accuracies
+
+N_BINS = 16
+N_HIDDEN = 128
+N_EPOCHS = 80
+LR = 1e-3
+K = 10
+DATASET_NAME = 'sift'
+BATCH_SIZE = 2048
+N_BINS_TO_SEARCH = 2
+N_TREES = 2
+N_LEVELS = 0
+TREE_BRANCHING = 1
+MODEL_TYPE = 'neural'
+
+
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--n_bins', default=N_BINS, type=int, help='number of bins' )
+    parser.add_argument('--k_train', default=K, type=int, help='number of neighbors during training')
+    parser.add_argument('--k_test', default=K, type=int, help='number of neighbors to construct knn graph')
+    parser.add_argument('--dataset_name', default=DATASET_NAME, type=str, help='Specify dataset name, can be one of "sift", "mnist"')
+    parser.add_argument('--n_hidden', default=N_HIDDEN, type=int, help='hidden dimension')
+    parser.add_argument('--n_epochs', default=N_EPOCHS, type=int, help='number of epochs for trainig')
+    parser.add_argument('--lr', default=LR, type=float, help='learning rate')    
+    parser.add_argument('--batch_size', default=BATCH_SIZE, type=int, help='batch size')
+    parser.add_argument('--n_bins_to_search', default=N_BINS_TO_SEARCH, type=int, help='number of bins to use')
+    parser.add_argument('--n_trees', default=N_TREES, type=int, help='number of trees')
+    parser.add_argument('--n_levels', default=N_LEVELS, type=str, help='number of levels in tree')
+    parser.add_argument('--tree_branching', default=TREE_BRANCHING, type=str, help='number of children per node in tree')
+    parser.add_argument('--model_type', default=MODEL_TYPE, type=str, help='Type of model to use')
+    parser.add_argument('--prepare_knn', default=True, type=str, help='Whether to prepare new k-NN matrix for dataset or load existing one from file')
+    parser.add_argument('--continue_train', default=False, type=str, help='Whether to train new models for dataset or load existing ones from file')
+
+
+    opt = parser.parse_args()
+    if opt.dataset_name not in ['sift','mnist']:
+        raise ValueError('dataset_name must be one of "sift", "mnist"')
+
+    if opt.model_type not in ['neural', 'linear']:
+        raise ValueError('model_type must be one of "neural", "linear"')
+        
+    return opt 

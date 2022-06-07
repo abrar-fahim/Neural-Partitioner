@@ -5,8 +5,7 @@ from treenode import TreeNode
 
 
 class ModelTree():
-    def __init__(self, n_input, branching, levels, n_classes, model_type='neural'):
-
+    def __init__(self, n_input, branching, levels, n_classes, n_hidden_params, model_type='neural'):
         
         if levels > 0:
             root_classes = branching
@@ -14,8 +13,9 @@ class ModelTree():
             # self.root.model.__init__(self.n_input, -1, self.n_global_classes, None) 
             root_classes = n_classes
         
-        self.root = TreeNode(n_input, -1, root_classes, None, model_type) 
+        self.root = TreeNode(n_input, n_hidden_params, root_classes, model_type) 
 
+        self.n_hidden_params = n_hidden_params
         self.n_input = n_input
         self.device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -88,9 +88,9 @@ class ModelTree():
                 if model.level >= levels - 1:
                     # model is leaf
                    
-                    child = TreeNode(n_input=self.n_input, n_hidden=-1, num_class=n_classes_per_leaf, opt=None, model_type=self.model_type).to(self.secondary_device)
+                    child = TreeNode(n_input=self.n_input, n_hidden=self.n_hidden_params, num_class=n_classes_per_leaf, model_type=self.model_type).to(self.secondary_device)
                 else:
-                    child = TreeNode(n_input=self.n_input, n_hidden=-1, num_class=self.branching, opt=None, model_type=self.model_type).to(self.secondary_device)
+                    child = TreeNode(n_input=self.n_input, n_hidden=self.n_hidden_params, num_class=self.branching, model_type=self.model_type).to(self.secondary_device)
                 child.parent = model
                 child.level = model.level + 1
                 child.index = b
@@ -112,7 +112,7 @@ class ModelTree():
         return self.train_model_tree_or_infer(None, None, Q, None, None, None, train_mode=False,batch_size=batch_size,iterations=None,lr=None, bin_count=1, model_loaded_from_file=None, test_X=None, test_Y=None, tree_index=None, models_path=models_path)
 
 
-    def train_model_tree_or_infer(self, X, Y, Q, input_weights, crit, data, train_mode=True,batch_size=4096,iterations=5,lr=1e-3, bin_count=1, model_loaded_from_file=False, test_X=None, test_Y=None, tree_index=0, return_raw_outputs=False, models_path=None):
+    def train_model_tree_or_infer(self, X, Y, Q, input_weights, crit, data, train_mode=True,batch_size=4096,iterations=5,lr=1e-3, bin_count=1, model_loaded_from_file=False, test_X=None, test_Y=None, tree_index=0, models_path=None):
 
         if models_path == None:
             print('no file directory for models found')
@@ -262,11 +262,8 @@ class ModelTree():
             if train_mode:
                 model.train()
 
-                n_org_X = X.shape[0]
 
-                dynamic_iters = (model.level + 1) * base_iters
-
-                n_inputs = model_input.shape[0]
+                dynamic_iters = (model.level + 1) * base_iters 
    
                
                 
@@ -276,7 +273,7 @@ class ModelTree():
                 if model.parent is not None:
                     use_generated_batches = True
                     # use_new_knn_matrix = True
-                (losses, test_losses) = model.train_model(model_input, model_labels, n_org_X, model_input_weights, tree_index, crit, data, batch_size=batch_size, iterations=dynamic_iters, lr=lr, root=self.root, test_X=test_X, test_Y=test_Y, use_generated_batches=use_generated_batches, use_new_knn_matrix=use_new_knn_matrix, models_path=models_path) 
+                (losses, acc_losses) = model.train_model(model_input, model_labels, model_input_weights, tree_index, crit, data, batch_size=batch_size, iterations=dynamic_iters, lr=lr,use_generated_batches=use_generated_batches, use_new_knn_matrix=use_new_knn_matrix, models_path=models_path) 
 
                 
 
@@ -284,42 +281,20 @@ class ModelTree():
 
                 
                 if start:
-
-                    # plt.plot(losses, label='train')
+                    # show loss plot for root model only
+                    plt.plot(losses)
+                    plt.title('Total Loss vs Epoch')
+                    plt.show()
+                    # plt.plot(acc_losses, label='add sums')
                     # plt.show()
-                    plt.plot(test_losses, label='add sums')
-                    plt.show()
-                    
-
-                    print('last 75 ')
-                    plt.plot(losses[-75:])
-                    plt.show()
-                    print('last 150 ')
-                    plt.plot(losses[-150:])
-                    plt.show()
+                
                     start = False
 
                 
 
 
 
-            # then find distribution of points
-            # model.eval()
-            # print(' -- MODEL PARAMS -- ')
-            # for name, param in model.named_parameters():
-            #     if param.requires_grad:
-            #         print (name, param.data)
-            # batching oututs 
             model.eval()
-
-            # for soft classification, decide which leaves to use per point
-            # there will be bin_count leaves per point 
-
-            # bins: (n, bin_count)
-            # scores: (n, bin_count)
-            # level_index: (n,)
-            # levels: (n,)
-
 
 
             with torch.no_grad():
@@ -331,31 +306,24 @@ class ModelTree():
 
                 for k in range(0, n_x, batch_size):
 
-                    # print(' K ', k)
                     model_input_batch = model_input[k: k + batch_size]
-                    # print('model input batch ', model_input_batch.shape)
                     batch_outputs = model.infer(model_input_batch)
                     del model_input_batch
                     batch_outputs = batch_outputs.detach()
-                    if k < batch_size and not train_mode:
-                        print('batch outputs ', batch_outputs)
-                    batch_outputs = torch.argmax(batch_outputs, dim=1) # shape = (n,) # CHANGE HERE FOR MULTI LEVEL SOFT CLASSIFICATION
+
+
+                    batch_outputs = torch.argmax(batch_outputs, dim=1)
                     outputs = torch.cat((outputs, batch_outputs), dim=0)
                     del batch_outputs
 
-                # outputs = model(model_input)
                 del model_input
                 model.distribution = outputs
 
 
                 uniques = torch.unique(model.distribution.flatten(), return_counts=True)[1].float()
-
-                print('uniques ,', uniques)
                 cand_set_size = torch.max(uniques)
 
                 model.distribution = model.distribution.to(self.secondary_device)
-
-                print('\nmodel distribution: {} / {}'.format(cand_set_size, outputs.shape[0]))
                 del outputs
                 del cand_set_size
 
@@ -396,7 +364,6 @@ class ModelTree():
 
         # preparing bins data structure
         Q_assigned_bins = None
-        # doing selected bin count = 1 for now, the argmax selects only the most probable bin
         if train_mode:
 
             self.assigned_bins = torch.empty((n, 1), device=self.secondary_device, dtype=int)  # doesn't need to be a tensor or in cuda
@@ -443,17 +410,10 @@ class ModelTree():
 
                 bins = torch.cat((bins, batch_bins), dim=0)
 
-            print('bins shape ', bins.shape)
 
 
             
             del leaf_input
-            
-
-
-
-            
-
             
 
            
@@ -504,8 +464,6 @@ class ModelTree():
             # print('uniques ', unique_bins)
 
             max_bin_size = torch.max(unique_bins)
-
-            print('max bin size ', max_bin_size)
 
             
 

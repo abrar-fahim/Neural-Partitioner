@@ -8,11 +8,13 @@ import prepare
 from sklearn import preprocessing
 
 class TreeNode():
-    def __init__(self,  n_input, n_hidden, num_class, opt, toplevel=False, model_type='neural'):
+    def __init__(self,  n_input, n_hidden, num_class, model_type='neural'):
 
 
 
         self.n_hidden =  128
+
+        self.n_hidden = n_hidden
 
 
         if model_type == 'neural':
@@ -20,6 +22,8 @@ class TreeNode():
             self.model = NeuralModel(n_input=n_input, n_hidden=self.n_hidden, num_class=num_class, opt=None).cuda()
         elif model_type == 'linear':
             self.model = LinearModel(n_input=n_input, n_hidden=self.n_hidden, num_class=num_class, opt=None).cuda()
+        else:
+            raise ValueError('model_type must be either neural or linear')
 
         self.n_classes = num_class
 
@@ -70,7 +74,7 @@ class TreeNode():
         self.model.cuda()
         
 
-    def train_model(self, X, Y, n_org_X, input_weights, ensemble_model_index, crit, data, batch_size=4096, iterations=5, lr=1e-3, root=None, test_X=None, test_Y=None, use_generated_batches=False, use_new_knn_matrix=False, models_path = None):
+    def train_model(self, X, Y, input_weights, ensemble_model_index, crit, data, batch_size=4096, iterations=5, lr=1e-3, use_generated_batches=False, use_new_knn_matrix=False, models_path = None):
 
         if models_path == None:
             print('no file directory for models found')
@@ -93,7 +97,7 @@ class TreeNode():
         
         losses = []
 
-        test_losses = []
+        acc_losses = []
 
 
 
@@ -111,10 +115,6 @@ class TreeNode():
 
         lowest_loss = float('inf')
 
-        last_add_sum = float('inf')
-
-        current_lr = lr
-
         class options(object):
             if data == 'sift':
                 normalize_data=False
@@ -126,7 +126,7 @@ class TreeNode():
             pass
 
         if use_new_knn_matrix:
-            print('prepping new Y')
+            print('Preparing new k-NN Matrix')
             Y = prepare.dist_rank(X, Y.shape[1], opt=options, data=data).float()
 
             Y = Y.to('cuda:0')
@@ -167,332 +167,242 @@ class TreeNode():
                 input_weights_batches[k] = input_weights_batch
                 del input_weights_batch
 
+          
 
+        for ep in range(1, iterations + 1):
 
-
-        # for c in range(1, 2):
-        for c in range(1):
-            if c == 0:
-                train_confidences = False
-                print('--- TRAINING MODEL FOR PARTITIONING ----')
-            else:
-
-                print(' --- TRAINING MODEL FOR CONFIDENCE SCORES --- ')
-                train_confidences = True
-                iterations = 10
 
             
+            
 
-            for ep in range(1, iterations + 1):
+            loss = 0
+            print("TRAINING")
+
+            if batch_size < n:
+                print('\nepoch ', ep, ' / ', iterations)
+            else:
+                print('\repoch ', ep, ' / ', iterations, end='')
+            loss_sum = 0
 
 
+            add_sum = 0
+            b_sum = 0
+
+
+            for k in range(int(n / batch_size) + 1):
                 
-                
 
-                loss = 0
-                print("TRAINING")
-
-                if batch_size < n:
-                    print('\nepoch ', ep, ' / ', iterations)
-                else:
-                    print('\repoch ', ep, ' / ', iterations, end='')
-                loss_sum = 0
-
-
-                add_sum = 0
-                b_sum = 0
-
-                conf_loss_sum = 0
-
-
+                optimizer.zero_grad()
 
                 
 
-
-                for k in range(int(n / batch_size) + 1):
-                    
-
-                    optimizer.zero_grad()
+                if batch_size < n and not use_generated_batches:
+                    # print()
 
                     
+                    print('\rtraining batch ', k, '/ ', n / batch_size, end='')
+                    # print('BATCHH')
 
-                    if batch_size < n and not use_generated_batches:
-                        # print()
+                    collect_knns = True # = True for better model performance
+
+                    # randomly sampling batch_size data points to create X_batch corresponding Y_batch
+
+                    random_indices = torch.randint(0, n, (batch_size,), device='cuda')
+
+
+
+                    X_batch = torch.index_select(X_scaled, 0, random_indices)
+                    Y_batch = torch.index_select(Y, 0, random_indices)
+
+                    input_weights_batch = torch.index_select(input_weights, 0, random_indices)
+
+                    del random_indices
+
+                    if collect_knns:
+
+
+                        knn_indices = torch.flatten(Y_batch)  # knn_indices contains indices of knns of all points in X_batch
+                        knn_indices = torch.unique(knn_indices)
+                        knn_indices, _ = torch.sort(knn_indices, descending=False) # sorting needed to make deterministic the order in which knns are present in (nks, d) shaped knns matrix
+                        knn_indices = knn_indices.type(dtype=torch.long)
+                        # print('knns indices', knn_indices)
+
+                        # temporarily pad X with nan and make knn_indices refer to this if index out of bounds
+                        
+
+                        # keep only indices that in range of this model's X
+                        knn_indices = knn_indices[(knn_indices < X.shape[0]) & (knn_indices >= 0)]
 
                         
-                        print('\rtraining batch ', k, '/ ', n / batch_size, end='')
-                        # print('BATCHH')
 
-                        collect_knns = True
-
-                        # FOR RANDOMLY SAMPLING batch_size DATA POINTS AND OPTIMIZING PER BATCH
-
-                        # randomly sampling batch_size data points to create X_batch corresponding Y_batch
-
-                        random_indices = torch.randint(0, n, (batch_size,), device='cuda')
-
-                        # random_indices = torch.arange(i + 1, i + batch_size + 1, device='cuda')
-                        # i += batch_size
+                        knns = torch.index_select(X_scaled, 0, knn_indices)
 
 
 
-                        X_batch = torch.index_select(X_scaled, 0, random_indices)
-                        Y_batch = torch.index_select(Y, 0, random_indices)
+                        map_vector = torch.zeros(n, device='cuda', dtype=torch.long) # maps from X index to index in knns
 
-                        input_weights_batch = torch.index_select(input_weights, 0, random_indices)
+                        nks_vector = torch.arange(knn_indices.shape[0], device='cuda', dtype=torch.long) # just a vector containing numbers from 0 to nks - 1
 
-                        del random_indices
+                        map_vector = torch.scatter(map_vector, 0, knn_indices, nks_vector)  # map vector shape should be (n)
 
-                        if collect_knns:
+                        # map_vector[knn_indices[i]] = nks_vector[i]
 
+                        #position of point i in knns vector is map_vector[i]
+                        # need to offset these positions by ns since map_vector is contatenated to X_batch, whose size is ns
 
-                            knn_indices = torch.flatten(Y_batch)  # knn_indices contains indices of knns of all points in X_batch
-                            knn_indices = torch.unique(knn_indices)
-                            knn_indices, _ = torch.sort(knn_indices, descending=False) # sorting needed to make deterministic the order in which knns are present in (nks, d) shaped knns matrix
-                            knn_indices = knn_indices.type(dtype=torch.long)
-                            # print('knns indices', knn_indices)
-
-                            # temporarily pad X with nan and make knn_indices refer to this if index out of bounds
-                            
-
-                            # keep only indices that in range of this model's X
-                            knn_indices = knn_indices[(knn_indices < X.shape[0]) & (knn_indices >= 0)]
-
-                            
-
-                            knns = torch.index_select(X_scaled, 0, knn_indices)
+                        map_vector = map_vector + X_batch.shape[0]
 
 
 
-                            map_vector = torch.zeros(n, device='cuda', dtype=torch.long) # maps from X index to index in knns
-
-                            nks_vector = torch.arange(knn_indices.shape[0], device='cuda', dtype=torch.long) # just a vector containing numbers from 0 to nks - 1
-
-                            map_vector = torch.scatter(map_vector, 0, knn_indices, nks_vector)  # map vector shape should be (n)
-
-                            # map_vector[knn_indices[i]] = nks_vector[i]
-
-                            #position of point i in knns vector is map_vector[i]
-                            # need to offset these positions by ns since map_vector is contatenated to X_batch, whose size is ns
-
-                            map_vector = map_vector + X_batch.shape[0]
+                        X_knn_batch = torch.cat((X_batch, knns), 0)
+                        
+                        
+                        del knns
 
 
+                        y_pred, confidence_scores = self.model(X_knn_batch)
+                        
+                        # del X_batch
 
-                            X_knn_batch = torch.cat((X_batch, knns), 0)
-                            
-                            
-                            del knns
-
-
-                            y_pred, confidence_scores = self.model(X_knn_batch)
-                            
-                            # del X_batch
-
-                            # replace values in Y_batch with corresponding indexes from map_vector
-                            
-                            Y_batch_shape = Y_batch.shape
-                            Y_batch = torch.flatten(Y_batch)
-                            Y_batch = Y_batch.type(dtype=torch.long)
+                        # replace values in Y_batch with corresponding indexes from map_vector
+                        
+                        Y_batch_shape = Y_batch.shape
+                        Y_batch = torch.flatten(Y_batch)
+                        Y_batch = Y_batch.type(dtype=torch.long)
 
 
 
 
-                            # next 2 lines replace -1s in y_batch to point to last value in map_vector, which is -1. Basically keeping -1s in Y_batch to be handled later and not get ScatterGatherKernel CUDA error in torch gather
-                            map_vector = torch.cat((map_vector, torch.tensor([-1], device='cuda')), dim=0)
-                            Y_batch = torch.where(Y_batch < 0, map_vector.shape[0] - 1, Y_batch)
+                        # next 2 lines replace -1s in y_batch to point to last value in map_vector, which is -1. Basically keeping -1s in Y_batch to be handled later and not get ScatterGatherKernel CUDA error in torch gather
+                        map_vector = torch.cat((map_vector, torch.tensor([-1], device='cuda')), dim=0)
+                        Y_batch = torch.where(Y_batch < 0, map_vector.shape[0] - 1, Y_batch)
 
 
-                            Y_batch = torch.gather(map_vector, 0, Y_batch)  # y_batch[i] = map_vector[y_batch[i]]
+                        Y_batch = torch.gather(map_vector, 0, Y_batch)  # y_batch[i] = map_vector[y_batch[i]]
 
-                            
-
-
-                            Y_batch = torch.reshape(Y_batch, Y_batch_shape) 
-                            Y_batch = Y_batch.type(dtype=torch.double)  # since trunc in loss fn isnt implemented for int or long dtypes
+                        
 
 
-                            # c = torch.zeros(batch_size)
-                            c = torch.zeros(X_knn_batch.shape[0])
-                            s = torch.zeros(X_knn_batch.shape[0])
+                        Y_batch = torch.reshape(Y_batch, Y_batch_shape) 
+                        Y_batch = Y_batch.type(dtype=torch.double)  # since trunc in loss fn isnt implemented for int or long dtypes
 
 
-                            c[:batch_size] = 0
-                            c[batch_size:] = 1 
-                            s[:batch_size] = 10
-                            s[batch_size:] = 1 
+                        # c = torch.zeros(batch_size)
+                        c = torch.zeros(X_knn_batch.shape[0])
+                        s = torch.zeros(X_knn_batch.shape[0])
+
+
+                        c[:batch_size] = 0
+                        c[batch_size:] = 1 
+                        s[:batch_size] = 10
+                        s[batch_size:] = 1 
 
 
 
-                            
-                        else:
-                            
-                            y_pred, confidence_scores = self.model(X_batch)
                         
                     else:
-                        # -- NO BATCHING --
-
-                        if not use_generated_batches:
-
-                            X_batch = X_scaled
-                            Y_batch = Y
-                            input_weights_batch = input_weights
-                        else:
-                            # print('batch size: {}, n: {}'.format(batch_size, n))
-                            print('\rtraining batch ', k, '/ ', n / batch_size, end='')
-                            rand = torch.randint(X_batches.shape[0], (1,), device='cuda').flatten()[0]
-                            X_batch = X_batches[rand]
-                            Y_batch = Y_batches[rand]
-                            input_weights_batch = input_weights_batches[rand]
-
+                        
                         y_pred, confidence_scores = self.model(X_batch)
-
-                        if ep == iterations:
-                            print('y pred ', y_pred)
-                        
-
-
-                    n_zero_points = n_org_X - y_pred.shape[0]
-                    n_bins = y_pred.shape[1]
-                    # print('y pred shape before ', y_pred.shape)
-
                     
-                    zeros = torch.zeros(1, n_bins, device='cuda')
-                    Y_batch = torch.where((Y_batch < y_pred.shape[0]) & (Y_batch >= 0), Y_batch, float(y_pred.shape[0]))
+                else:
+                    # -- NO BATCHING --
 
-                    y_pred = torch.cat((y_pred, zeros), dim=0)
+                    if not use_generated_batches:
 
-                    del X_batch
-                    
-
-                    del zeros
-
-                    
-
-                    # if batch_size < n:
-                    if False:
-
-                        (_, add, b, _) = crit(y_pred, Y_batch, input_weights_batch)
-                        add_sum += add
-                        b_sum += b 
+                        X_batch = X_scaled
+                        Y_batch = Y
+                        input_weights_batch = input_weights
                     else:
+                        print('\rtraining batch ', k, '/ ', n / batch_size, end='')
+                        rand = torch.randint(X_batches.shape[0], (1,), device='cuda').flatten()[0]
+                        X_batch = X_batches[rand]
+                        Y_batch = Y_batches[rand]
+                        input_weights_batch = input_weights_batches[rand]
 
-                        # running_b_top_size_bound = int(0.01 * n)
-                        running_b_top_size_bound = batch_size
-                        (loss, diff_sum, b, conf_loss, _ ) = crit(y_pred, Y_batch, input_weights_batch, org_n=running_b_top_size_bound, confidence_scores=confidence_scores)
-                        del Y_batch
-                        
-                        del y_pred
+                    y_pred, confidence_scores = self.model(X_batch)
 
-                        del confidence_scores
-
-
-
-
-                        if train_confidences:
-
-                            loss = conf_loss
-                            # print('conf loss: {}'.format(conf_loss))
-
-                            # freeze all params
-                            for param in self.model.parameters():
-                                param.requires_grad = False
-                            # unfreeze only confidence params
-                            self.model.fc_confidence.weight.requires_grad = True
-                            self.model.fc_confidence.bias.requires_grad = True
-
-
-                          
-
-                        loss.backward() # only backwarding here, stepping each epoch
-
-                        optimizer.step()
-
-
-                        loss_sum += loss.detach()
-
-                        b_sum += b.detach()
-
-                        add_sum += diff_sum.detach()
-
-
+                    if ep == iterations:
+                        print('y pred ', y_pred)
                     
-
-                        del diff_sum
-
-                        del b
-                        del loss
-                        del conf_loss
-
-
-                        if batch_size >= n:
-                            break # break out of for loop
-
-
-
-                    torch.cuda.empty_cache()
-                    
+                n_bins = y_pred.shape[1]
+                # print('y pred shape before ', y_pred.shape)
 
                 
-                    
-                                    
-                pass
+                zeros = torch.zeros(1, n_bins, device='cuda')
+                Y_batch = torch.where((Y_batch < y_pred.shape[0]) & (Y_batch >= 0), Y_batch, float(y_pred.shape[0]))
 
+                y_pred = torch.cat((y_pred, zeros), dim=0)
+
+                del X_batch
+                
+
+                del zeros
 
                 
-                n_batches = int(n / batch_size) + 1
+                running_b_top_size_bound = batch_size
+                (loss, diff_sum, b, conf_loss, _ ) = crit(y_pred, Y_batch, input_weights_batch, org_n=running_b_top_size_bound, confidence_scores=confidence_scores)
+                del Y_batch
+                
+                del y_pred
+
+                del confidence_scores
+
+                loss.backward() # only backwarding here, stepping each epoch
+
+                optimizer.step()
+
+
+                loss_sum += loss.detach()
+
+                b_sum += b.detach()
+
+                add_sum += diff_sum.detach()
+
+                del diff_sum
+
+                del b
+                del loss
+                del conf_loss
+
 
                 if batch_size >= n:
-                    n_batches = 1
+                    break # break out of for loop
+                torch.cuda.empty_cache()
+                                
+            pass
 
-                print()
-                print('n batches ', n_batches)
-                # print('loss ', loss_sum / n_batches)
-                print('add sum ', add_sum / n_batches)
-
-                print('conf loss: ', conf_loss_sum / n_batches)
-
-                test_losses.append((add_sum.item() / n_batches))
-
-                if add_sum / n_batches <  last_add_sum:
-                    if last_add_sum < 9999:
-                        last_add_sum = add_sum / n_batches
-                else:
-                    # add_sum increased, so reduce lr
-                    new_lr = current_lr / 10
-                    current_lr = new_lr
-                    print('reducing lr to ', new_lr)
-                    for g in optimizer.param_groups:
-                        
-                        g['lr'] = new_lr
-                    # last_add_sum = add_sum / n_batches
-                    last_add_sum = 9999 # wont come to this else statement again 
-                    
-            
-
-                print('b sum ', b_sum / n_batches)
-
-
-                
-                
-
-                if loss_sum < lowest_loss:
-                    lowest_loss = loss_sum
-                    torch.save(self.model.state_dict(), models_path + '/' + data + '-best-model-' + self.id + '-parameters.pt')
-                
-                pass
 
             
-                n_batches = int(n / batch_size) + 1
-                losses.append(loss_sum.item() / n_batches)
+            n_batches = int(n / batch_size) + 1
 
-                # test_losses.append(test_loss_sum.item() / n_batches)
-                # losses.append(loss_sum.item())
+            if batch_size >= n:
+                n_batches = 1
 
-                if loss_sum == 0:
-                    print('loss is 0, BREAKING')
-                    break
-                del loss_sum
+            print()
+
+            acc_losses.append((add_sum.item() / n_batches))
+                
+        
+
+            print('b sum ', b_sum / n_batches)
+
+
+        
+
+            if loss_sum < lowest_loss:
+                lowest_loss = loss_sum
+                torch.save(self.model.state_dict(), models_path + '/' + data + '-best-model-' + self.id + '-parameters.pt')
+            
+            pass
+
+        
+            n_batches = int(n / batch_size) + 1
+            losses.append(loss_sum.item() / n_batches)
+
+            if loss_sum == 0:
+                print('loss is 0, BREAKING')
+                break
+            del loss_sum
         # loading best version of model after training
 
         # print('id ', self.id)
@@ -504,12 +414,8 @@ class TreeNode():
 
         self.to('cuda:0')
         self.eval()
-        # print('loaded model')
-        # for name, param in self.model.named_parameters():
-        #     if param.requires_grad:
-        #         print(name, param.data)
 
-        return losses, test_losses
+        return losses, acc_losses
 
 
     def load_params_from_file(self, data, models_path):

@@ -32,10 +32,10 @@ def read_paths():
 
 
 
-def run(n_bins, epochs, param_lr, param_levels, param_branching, model_type='neural', custom_dataset=None, do_training=False, data='mnist', prepare_knn=False, num_models=2, batch_size=1024, k_train=10, k_inference=10, n_bins_to_search=1, continue_train=False):
+def run(n_bins, epochs, param_lr, n_hidden_params=128, num_levels=0, tree_branching=1, model_type='neural', custom_dataset=None, do_training=False, data='mnist', prepare_knn=True, num_models=2, batch_size=1024, k_train=10, k_inference=10, n_bins_to_search=1, continue_train=False):
 
-    levels = param_levels # no of levels of models
-    branching = param_branching # no of children per model each level
+    levels = num_levels # no of levels of models
+    branching = tree_branching # no of children per model each level
 
     bin_count = n_bins_to_search
 
@@ -68,8 +68,8 @@ def run(n_bins, epochs, param_lr, param_levels, param_branching, model_type='neu
       dataset = MyDataset(paths['path_to_mnist'])
     pass
 
-    if data != 'custom':
-        print(dataset.get_file().keys())
+    # if data != 'custom':
+    #     print(dataset.get_file().keys())
 
    
     
@@ -77,9 +77,6 @@ def run(n_bins, epochs, param_lr, param_levels, param_branching, model_type='neu
         X = custom_dataset
     else:
         X = dataset.get_file()['train']
-
-    print("x shape")
-    print(X.shape)
 
     n_data = X.shape[0]
 
@@ -126,14 +123,11 @@ def run(n_bins, epochs, param_lr, param_levels, param_branching, model_type='neu
     if data != 'custom':
         test_dataset = dataset.get_file()['test']
 
-    print("file y shape")
-    print(Y.shape)
-
     
 
 
 
-    print("prepping X tensor")
+    print("Preparing dataset tensor")
 
     if custom_dataset is None:
         if(os.path.isfile(paths['path_to_models'] + '/' + data +  '-X.pt')):
@@ -154,7 +148,7 @@ def run(n_bins, epochs, param_lr, param_levels, param_branching, model_type='neu
         
     pass
 
-    print("prepping Y tensor")
+    print("prepping k-NN Matrix tensor")
     if(os.path.isfile(paths['path_to_models'] + '/' + data +  '-Y.pt') and not prepare_knn):
         Y = torch.load(paths['path_to_models'] + '/' + data +  '-Y.pt')
     else:
@@ -164,9 +158,6 @@ def run(n_bins, epochs, param_lr, param_levels, param_branching, model_type='neu
     pass
 
 
-    
-
-    print("Y shape", Y.shape)
 
     # save tensor to file
 
@@ -180,7 +171,7 @@ def run(n_bins, epochs, param_lr, param_levels, param_branching, model_type='neu
     # build model
     
     n_bins = n_bins
-    input_dim = X.size(1)
+    input_dim = X.shape[1]
 
 
 
@@ -189,7 +180,7 @@ def run(n_bins, epochs, param_lr, param_levels, param_branching, model_type='neu
 
 
 
-    model_forest = ModelForest(num_models, X.shape[1], branching, levels, n_bins, model_type=model_type)
+    model_forest = ModelForest(num_models, input_dim, branching, levels, n_bins, n_hidden_params, model_type=model_type)
 
     
 
@@ -220,8 +211,7 @@ def run(n_bins, epochs, param_lr, param_levels, param_branching, model_type='neu
     
     single_model = model_forest.trees[0].root.model
 
-    print('no of params in one model: {}'.format(sum(p.numel() for p in single_model.parameters())))
-    print("starting training")
+    print('no of parameters in one model: {}'.format(sum(p.numel() for p in single_model.parameters())))
     if do_training:
 
         print('training forest')
@@ -236,7 +226,7 @@ def run(n_bins, epochs, param_lr, param_levels, param_branching, model_type='neu
         if custom_dataset is not None:
             X_test = X
             Y_test = Y
-        print("calculating accuracy: Y_test: {}, X_test: {}, X: {}".format(Y_test.shape, X_test.shape, X.shape))
+        # print("calculating accuracy: Y_test: {}, X_test: {}, X: {}".format(Y_test.shape, X_test.shape, X.shape))
 
         train_bins = None
 
@@ -244,17 +234,18 @@ def run(n_bins, epochs, param_lr, param_levels, param_branching, model_type='neu
         torch.cuda.empty_cache()
 
 
-        print(' --- FINDING TEST ACCURACY --- ')
+        print(' --- FINDING TEST ACCURACY --- \n')
         # TEST ACCCURACY
         bins, plot_x, plot_y = utils.get_test_accuracy(model_forest, knn=Y_test, X_test=X_test, k=k_inference, batch_size=batch_size, bin_count_param=bin_count, models_path=paths['path_to_models']) 
 
 
         
-   
-        
-    pass
-    return (losses, bins, train_bins, plot_x, plot_y)    
+    return (losses, bins, train_bins, plot_x, plot_y)      
 
 if __name__ == "__main__":
 
-    run(n_bins=16, epochs=100, param_lr=1e-3, param_levels=0, param_branching=16, model_type='neural', custom_dataset=None, do_training=True, data='mnist', prepare_knn=True,num_models=2, batch_size=3000, k_train=10, k_inference=10, n_bins_to_search=2, continue_train=False)
+    opt = utils.parse_args()
+
+    # run(n_bins=16, epochs=100, param_lr=1e-3, n_hidden_params=128, model_type='neural', do_training=True, data='mnist', prepare_knn=True, num_models=2, batch_size=3000, k_train=10, k_inference=10, n_bins_to_search=2)
+
+    run(n_bins=opt.n_bins, epochs=opt.n_epochs, param_lr=opt.lr, n_hidden_params=opt.n_hidden, model_type=opt.model_type, do_training=True, data=opt.dataset_name, prepare_knn=opt.prepare_knn, num_models=opt.num_trees, batch_size=opt.batch_size, k_train=opt.k_train, k_inference=opt.k_test, n_bins_to_search=opt.n_bins_to_search, continue_train=opt.continue_train)

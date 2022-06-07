@@ -3,7 +3,7 @@ from modeltree import ModelTree
 
 
 class ModelForest():
-    def __init__(self, n_trees, n_input, branching, levels, n_classes, model_type='neural') -> None:
+    def __init__(self, n_trees, n_input, branching, levels, n_classes, n_hidden_params, model_type='neural') -> None:
         self.trees = [] # list of modeltrees
         self.n_trees = n_trees  
         self.n_input = n_input
@@ -11,6 +11,7 @@ class ModelForest():
         self.levels = levels
         self.n_classes = n_classes
         self.model_type=model_type
+        self.n_hidden_params = n_hidden_params
         pass
 
     def eval(self):
@@ -29,7 +30,7 @@ class ModelForest():
             # else:
             #     load_from_file = False
             print('BUILDING TREE %d / %d' % (i, self.n_trees))
-            tree = ModelTree(self.n_input, self.branching, self.levels, self.n_classes, model_type=self.model_type) 
+            tree = ModelTree(self.n_input, self.branching, self.levels, self.n_classes, self.n_hidden_params,  model_type=self.model_type) 
             tree.build_tree_from_root(load_from_file=load_from_file, data=data, models_path=models_path)
             self.trees.append(tree)
             self.data = data
@@ -42,8 +43,6 @@ class ModelForest():
         input_weights = torch.ones(n, device='cuda', requires_grad=False)
 
         input_weights_sum = torch.sum(input_weights)
-        print('old input weights: {}'.format(input_weights))
-        old_n_epochs = n_epochs
         
         for (i, model_tree) in enumerate(self.trees):
             
@@ -53,12 +52,7 @@ class ModelForest():
             
             running_current_weights = torch.empty((0), device='cuda', requires_grad=False)  # empty tensor to store running current_weights
 
-            # if i <= 0:
-            if i <= 0:
-                # n_epochs = 0 # SKIPPING 0TH MODEL FOR NOW
-                pass
-            else:
-                n_epochs = old_n_epochs
+
             for j in range(i):  # all models from 0 to (i-1)
             # for j in range(max(i-1, 0), i):  # only the prev model, except for 0th model
 
@@ -76,22 +70,16 @@ class ModelForest():
                     print('\rbatch ', k / batch_size, ' / ', n / batch_size, end='')
 
                     
-                    # start = k * batch_size
-                    # end = (k + 1) * batch_size
-                    # X_batch = X[start:end]
-                    # Y_batch = Y[start:end]
 
                     X_batch = X[k: k + batch_size]
                     Y_batch = Y[k: k + batch_size]
 
                     input_weights_batch = input_weights[k: k + batch_size]
-                    # print('X batch shape', X_batch.shape)
                     # processing batch
                     knn_indices = torch.flatten(Y_batch)
                     knn_indices = torch.unique(knn_indices)
                     knn_indices, _ = torch.sort(knn_indices, descending=False)
                     knn_indices = knn_indices.type(dtype=torch.long)
-                    # print('knns indices', knn_indices)
                     knns = torch.index_select(X, 0, knn_indices)
                     map_vector = torch.zeros(n, device='cuda', dtype=torch.long)
                     nks_vector = torch.arange(knn_indices.shape[0], device='cuda', dtype=torch.long)
@@ -122,43 +110,24 @@ class ModelForest():
                     # here, current_weights is a vector of size batch_size
                     current_weights = current_weights.detach() 
                     running_current_weights = torch.cat((running_current_weights, current_weights), 0)
-                    # print('cw shape: {}'.format(current_weights.shape))
-                    # print('running length', running_current_weights.shape)
+
                     del current_weights
                     del input_weights_batch
 
                 pass
 
                 model.root.to('cpu')    
-                # y_pred = model_list[j](X)
-                # (_, _, _, current_weights) = crit(y_pred, Y, input_weights) 
-                # current_weights = current_weights.detach()
-
-                # print('iw shape: {}, rcw shape: {}'.format(input_weights.shape, running_current_weights.shape))
-                # input_weights *= running_current_weights    # keeping running product of all input weights for all models 0 to (i-1) in input_weights
-                input_weights *= running_current_weights    # old models weights are captured in input_weights thru loss fn
+                input_weights *= running_current_weights    # keeping running product of all input weights for all models 0 to (i-1) in input_weights
 
 
-
-            print('weights quartiles: ', torch.quantile(input_weights, torch.tensor([0.25, 0.5, 0.75, 0.8, 0.95, 1], device='cuda')))
-            
-
-            # clamp weights to ignore weights above 75th percentile.
-            # input_weights = torch.clamp(input_weights, min=0.5, max=torch.quantile(input_weights, 0.9))
             input_weights = torch.clamp(input_weights, min=1e-9)
 
             
             # make new input weights add up to all ones input weights sum
             input_weights = (input_weights / torch.sum(input_weights)) * input_weights_sum
 
-            print('new input weights: {}'.format(input_weights))
-
-            print('input weights: MAX: {}, MIN: {} '.format(torch.max(input_weights), torch.min(input_weights)))
-
-
 
             torch.cuda.empty_cache()
-            print('training')
 
             
 
@@ -188,8 +157,6 @@ class ModelForest():
 
     def infer(self, Q, batch_size, bin_count_param, models_path):
 
-        # print(' ----- WHYYYYYYYYYYYYY  2111111------- ')
-
 
 
         query_bins = torch.empty((self.n_trees, Q.shape[0], bin_count_param), device='cuda')
@@ -207,17 +174,12 @@ class ModelForest():
             scores[i] = model_scores.to('cuda')
             dataset_bins[i] = model_tree.assigned_bins.to('cuda')
 
-            # inference: (n_models, n, bin_count_param)
 
             # scores = (n_models, n, 1) -> tells score of first bin only
 
             # return query inference list of shape (n_models, n_q, bin_count_param)),
             # return inference of dataset points of that model (n_models, n_x, 1)
             # also return scores (n_models, n_x, 1)
-            # print(' ----- WHYYYYYYYYYYYYY seogihdioaghsdrsoi;ghdr;sogi------- ')
-
-        # print(' ----- WHYYYYYYYYYYYYY ------- ')
-        print('forest inf shapes ', query_bins.shape, scores.shape, dataset_bins.shape)
 
         return query_bins, scores, dataset_bins
 
