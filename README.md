@@ -15,9 +15,9 @@ This file contains all the directory paths that our code needs for various tasks
 - `path_to_tensors`: path to folder that will cache some of the processed tensors for faster subsequent runs.
 
 ##  Running our code
-First populate the [paths.txt](paths.txt) file with the proper folder directories as outlined above. Then download the [SIFT](http://corpus-texmex.irisa.fr/) and/or [MNIST](http://yann.lecun.com/exdb/mnist/) datasets from [ann-benchmarks](https://github.com/erikbern/ann-benchmarks#data-sets).
+First populate the [paths.txt](paths.txt) file with the proper folder directories as outlined above. Then download the [SIFT](http://corpus-texmex.irisa.fr/) and/or [MNIST](http://yann.lecun.com/exdb/mnist/) datasets from [ANN Benchmarks](https://github.com/erikbern/ann-benchmarks#data-sets) into the `path_to_mnist` and/or `path_to_sift` folders.
 
-To run our code with in the default configuration, run
+To run our code with in the default configuration, run:
 
  `python main.py`. 
 
