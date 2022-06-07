@@ -51,14 +51,8 @@ def run(n_bins, epochs, param_lr, n_hidden_params=128, num_levels=0, tree_branch
     paths = read_paths()
 
 
-    cpu = torch.device('cpu')
-    cuda = torch.device('cuda')
-    if torch.cuda.is_available():
-        primary_device = cuda
-        secondary_device = cpu
-    else:
-        primary_device = cpu
-        secondary_device = cpu
+    primary_device = utils.primary_device
+    secondary_device = utils.secondary_device
 
 
     # get training dataset
@@ -100,7 +94,7 @@ def run(n_bins, epochs, param_lr, n_hidden_params=128, num_levels=0, tree_branch
 
         print('preparing knn with k = ', k_train)
         
-        Y = prepare.dist_rank(torch.tensor(X), k_train, opt=options, data=data)
+        Y = prepare.dist_rank(torch.tensor(X, dtype=float), k_train, opt=options, data=data)
 
         
 
@@ -248,4 +242,4 @@ if __name__ == "__main__":
 
     # run(n_bins=16, epochs=100, param_lr=1e-3, n_hidden_params=128, model_type='neural', do_training=True, data='mnist', prepare_knn=True, num_models=2, batch_size=3000, k_train=10, k_inference=10, n_bins_to_search=2)
 
-    run(n_bins=opt.n_bins, epochs=opt.n_epochs, param_lr=opt.lr, n_hidden_params=opt.n_hidden, model_type=opt.model_type, do_training=True, data=opt.dataset_name, prepare_knn=opt.prepare_knn, num_models=opt.num_trees, batch_size=opt.batch_size, k_train=opt.k_train, k_inference=opt.k_test, n_bins_to_search=opt.n_bins_to_search, continue_train=opt.continue_train)
+    run(n_bins=opt.n_bins, epochs=opt.n_epochs, param_lr=opt.lr, n_hidden_params=opt.n_hidden, model_type=opt.model_type, do_training=True, data=opt.dataset_name, prepare_knn=not opt.load_knn, num_models=opt.n_trees, batch_size=opt.batch_size, k_train=opt.k_train, k_inference=opt.k_test, n_bins_to_search=opt.n_bins_to_search, continue_train=opt.continue_train)

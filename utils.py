@@ -4,6 +4,64 @@ import torch
 import argparse
 
 
+### DEFAULT PARAMETERS ###
+
+N_BINS = 16
+N_HIDDEN = 128
+N_EPOCHS = 80
+LR = 1e-3
+K = 10
+DATASET_NAME = 'sift'
+BATCH_SIZE = 2048
+N_BINS_TO_SEARCH = 2
+N_TREES = 2
+N_LEVELS = 0
+TREE_BRANCHING = 1
+MODEL_TYPE = 'neural'
+
+cpu = torch.device('cpu')
+cuda = torch.device('cuda')
+if torch.cuda.is_available():
+    primary_device = cuda
+    secondary_device = cpu
+else:
+    primary_device = cpu
+    secondary_device = cpu
+
+
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--n_bins', default=N_BINS, type=int, help='number of bins' )
+    parser.add_argument('--k_train', default=K, type=int, help='number of neighbors during training')
+    parser.add_argument('--k_test', default=K, type=int, help='number of neighbors to construct knn graph')
+    parser.add_argument('--dataset_name', default=DATASET_NAME, type=str, help='Specify dataset name, can be one of "sift", "mnist"')
+    parser.add_argument('--n_hidden', default=N_HIDDEN, type=int, help='hidden dimension')
+    parser.add_argument('--n_epochs', default=N_EPOCHS, type=int, help='number of epochs for training')
+    parser.add_argument('--lr', default=LR, type=float, help='learning rate')    
+    parser.add_argument('--batch_size', default=BATCH_SIZE, type=int, help='batch size')
+    parser.add_argument('--n_bins_to_search', default=N_BINS_TO_SEARCH, type=int, help='number of bins to use')
+    parser.add_argument('--n_trees', default=N_TREES, type=int, help='number of trees')
+    parser.add_argument('--n_levels', default=N_LEVELS, type=int, help='number of levels in tree')
+    parser.add_argument('--tree_branching', default=TREE_BRANCHING, type=int, help='number of children per node in tree')
+    parser.add_argument('--model_type', default=MODEL_TYPE, type=str, help='Type of model to use')
+    parser.add_argument('--load_knn', action=argparse.BooleanOptionalAction, help='Load existing k-NN matrix from file')
+    parser.add_argument('--continue_train', action=argparse.BooleanOptionalAction, help='Load existing models from file')
+
+
+    opt = parser.parse_args()
+    if opt.dataset_name not in ['sift','mnist']:
+        raise ValueError('dataset_name must be one of "sift", "mnist"')
+
+    if opt.model_type not in ['neural', 'linear']:
+        raise ValueError('model_type must be one of "neural", "linear"')
+        
+    return opt 
+
+
+
+
 def get_test_accuracy(model_forest, knn, X_test, k, batch_size=1024, bin_count_param=1, models_path=None):
 
     
@@ -151,47 +209,3 @@ def get_test_accuracy(model_forest, knn, X_test, k, batch_size=1024, bin_count_p
         plt.show()
 
     return all_points_bins, ensemble_cand_set_sizes, ensemble_accuracies
-
-N_BINS = 16
-N_HIDDEN = 128
-N_EPOCHS = 80
-LR = 1e-3
-K = 10
-DATASET_NAME = 'sift'
-BATCH_SIZE = 2048
-N_BINS_TO_SEARCH = 2
-N_TREES = 2
-N_LEVELS = 0
-TREE_BRANCHING = 1
-MODEL_TYPE = 'neural'
-
-
-
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--n_bins', default=N_BINS, type=int, help='number of bins' )
-    parser.add_argument('--k_train', default=K, type=int, help='number of neighbors during training')
-    parser.add_argument('--k_test', default=K, type=int, help='number of neighbors to construct knn graph')
-    parser.add_argument('--dataset_name', default=DATASET_NAME, type=str, help='Specify dataset name, can be one of "sift", "mnist"')
-    parser.add_argument('--n_hidden', default=N_HIDDEN, type=int, help='hidden dimension')
-    parser.add_argument('--n_epochs', default=N_EPOCHS, type=int, help='number of epochs for trainig')
-    parser.add_argument('--lr', default=LR, type=float, help='learning rate')    
-    parser.add_argument('--batch_size', default=BATCH_SIZE, type=int, help='batch size')
-    parser.add_argument('--n_bins_to_search', default=N_BINS_TO_SEARCH, type=int, help='number of bins to use')
-    parser.add_argument('--n_trees', default=N_TREES, type=int, help='number of trees')
-    parser.add_argument('--n_levels', default=N_LEVELS, type=str, help='number of levels in tree')
-    parser.add_argument('--tree_branching', default=TREE_BRANCHING, type=str, help='number of children per node in tree')
-    parser.add_argument('--model_type', default=MODEL_TYPE, type=str, help='Type of model to use')
-    parser.add_argument('--prepare_knn', default=True, type=str, help='Whether to prepare new k-NN matrix for dataset or load existing one from file')
-    parser.add_argument('--continue_train', default=False, type=str, help='Whether to train new models for dataset or load existing ones from file')
-
-
-    opt = parser.parse_args()
-    if opt.dataset_name not in ['sift','mnist']:
-        raise ValueError('dataset_name must be one of "sift", "mnist"')
-
-    if opt.model_type not in ['neural', 'linear']:
-        raise ValueError('model_type must be one of "neural", "linear"')
-        
-    return opt 

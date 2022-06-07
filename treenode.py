@@ -1,4 +1,3 @@
-from matplotlib import pyplot as plt
 import torch
 
 from model import LinearModel, NeuralModel
@@ -6,6 +5,7 @@ from model import LinearModel, NeuralModel
 import prepare
 
 from sklearn import preprocessing
+import utils
 
 class TreeNode():
     def __init__(self,  n_input, n_hidden, num_class, model_type='neural'):
@@ -62,7 +62,7 @@ class TreeNode():
         # if X.shape[0] > 0:
         X = X.to('cpu')
         X_scaled = self.scaler.transform(X)
-        X_scaled = torch.tensor(X_scaled, device='cuda:0')
+        X_scaled = torch.tensor(X_scaled, device=utils.primary_device)
 
         inference, confidence_scores = self.model(X_scaled)
         if return_confidence_scores:
@@ -92,7 +92,7 @@ class TreeNode():
         # self.scaler = preprocessing.StandardScaler(with_mean=False, with_std=False).fit(X)
         X_scaled = self.scaler.transform(X)
 
-        X_scaled = torch.tensor(X_scaled, device='cuda:0')
+        X_scaled = torch.tensor(X_scaled, device=utils.primary_device)
 
         
         losses = []
@@ -129,7 +129,7 @@ class TreeNode():
             print('Preparing new k-NN Matrix')
             Y = prepare.dist_rank(X, Y.shape[1], opt=options, data=data).float()
 
-            Y = Y.to('cuda:0')
+            Y = Y.to(utils.primary_device)
 
        
         # use_generated_batches = False
@@ -147,15 +147,15 @@ class TreeNode():
             pass
             n_batches = int(n / batch_size) + 1
 
-            X_batches = torch.empty((n_batches, batch_size, d),device='cuda')
+            X_batches = torch.empty((n_batches, batch_size, d),device=utils.primary_device)
             
-            Y_batches = torch.empty((n_batches, batch_size, Y.shape[1]), device='cuda', dtype=float)
+            Y_batches = torch.empty((n_batches, batch_size, Y.shape[1]), device=utils.primary_device, dtype=float)
 
-            input_weights_batches = torch.empty((n_batches, batch_size), device='cuda')
+            input_weights_batches = torch.empty((n_batches, batch_size), device=utils.primary_device)
 
 
             for k in range(int(n / batch_size) + 1):
-                random_indices = torch.randint(0, n, (batch_size,), device='cuda')
+                random_indices = torch.randint(0, n, (batch_size,), device=utils.primary_device)
                 X_batch = torch.index_select(X_scaled, 0, random_indices)
                 input_weights_batch = torch.index_select(input_weights, 0, random_indices)
 
@@ -207,7 +207,7 @@ class TreeNode():
 
                     # randomly sampling batch_size data points to create X_batch corresponding Y_batch
 
-                    random_indices = torch.randint(0, n, (batch_size,), device='cuda')
+                    random_indices = torch.randint(0, n, (batch_size,), device=utils.primary_device)
 
 
 
@@ -239,9 +239,9 @@ class TreeNode():
 
 
 
-                        map_vector = torch.zeros(n, device='cuda', dtype=torch.long) # maps from X index to index in knns
+                        map_vector = torch.zeros(n, device=utils.primary_device, dtype=torch.long) # maps from X index to index in knns
 
-                        nks_vector = torch.arange(knn_indices.shape[0], device='cuda', dtype=torch.long) # just a vector containing numbers from 0 to nks - 1
+                        nks_vector = torch.arange(knn_indices.shape[0], device=utils.primary_device, dtype=torch.long) # just a vector containing numbers from 0 to nks - 1
 
                         map_vector = torch.scatter(map_vector, 0, knn_indices, nks_vector)  # map vector shape should be (n)
 
@@ -274,7 +274,7 @@ class TreeNode():
 
 
                         # next 2 lines replace -1s in y_batch to point to last value in map_vector, which is -1. Basically keeping -1s in Y_batch to be handled later and not get ScatterGatherKernel CUDA error in torch gather
-                        map_vector = torch.cat((map_vector, torch.tensor([-1], device='cuda')), dim=0)
+                        map_vector = torch.cat((map_vector, torch.tensor([-1], device=utils.primary_device)), dim=0)
                         Y_batch = torch.where(Y_batch < 0, map_vector.shape[0] - 1, Y_batch)
 
 
@@ -286,16 +286,6 @@ class TreeNode():
                         Y_batch = torch.reshape(Y_batch, Y_batch_shape) 
                         Y_batch = Y_batch.type(dtype=torch.double)  # since trunc in loss fn isnt implemented for int or long dtypes
 
-
-                        # c = torch.zeros(batch_size)
-                        c = torch.zeros(X_knn_batch.shape[0])
-                        s = torch.zeros(X_knn_batch.shape[0])
-
-
-                        c[:batch_size] = 0
-                        c[batch_size:] = 1 
-                        s[:batch_size] = 10
-                        s[batch_size:] = 1 
 
 
 
@@ -314,7 +304,7 @@ class TreeNode():
                         input_weights_batch = input_weights
                     else:
                         print('\rtraining batch ', k, '/ ', n / batch_size, end='')
-                        rand = torch.randint(X_batches.shape[0], (1,), device='cuda').flatten()[0]
+                        rand = torch.randint(X_batches.shape[0], (1,), device=utils.primary_device).flatten()[0]
                         X_batch = X_batches[rand]
                         Y_batch = Y_batches[rand]
                         input_weights_batch = input_weights_batches[rand]
@@ -325,10 +315,9 @@ class TreeNode():
                         print('y pred ', y_pred)
                     
                 n_bins = y_pred.shape[1]
-                # print('y pred shape before ', y_pred.shape)
 
                 
-                zeros = torch.zeros(1, n_bins, device='cuda')
+                zeros = torch.zeros(1, n_bins, device=utils.primary_device)
                 Y_batch = torch.where((Y_batch < y_pred.shape[0]) & (Y_batch >= 0), Y_batch, float(y_pred.shape[0]))
 
                 y_pred = torch.cat((y_pred, zeros), dim=0)
@@ -340,14 +329,14 @@ class TreeNode():
 
                 
                 running_b_top_size_bound = batch_size
-                (loss, diff_sum, b, conf_loss, _ ) = crit(y_pred, Y_batch, input_weights_batch, org_n=running_b_top_size_bound, confidence_scores=confidence_scores)
+                (loss, diff_sum, b, _, _ ) = crit(y_pred, Y_batch, input_weights_batch, org_n=running_b_top_size_bound)
                 del Y_batch
                 
                 del y_pred
 
                 del confidence_scores
 
-                loss.backward() # only backwarding here, stepping each epoch
+                loss.backward()
 
                 optimizer.step()
 
@@ -362,7 +351,6 @@ class TreeNode():
 
                 del b
                 del loss
-                del conf_loss
 
 
                 if batch_size >= n:
@@ -412,7 +400,7 @@ class TreeNode():
 
         print()
 
-        self.to('cuda:0')
+        self.to(utils.primary_device)
         self.eval()
 
         return losses, acc_losses
@@ -427,7 +415,7 @@ class TreeNode():
             
         self.model.load_state_dict(torch.load(models_path + '/' + data + '-best-model-' + self.id + '-parameters.pt'))
 
-        self.to('cuda:0')
+        self.to(utils.primary_device)
         self.eval()
 
 

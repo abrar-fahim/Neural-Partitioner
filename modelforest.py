@@ -1,3 +1,4 @@
+import utils
 import torch
 from modeltree import ModelTree
 
@@ -40,7 +41,7 @@ class ModelForest():
         n = X.shape[0]
 
         self.n_points = n
-        input_weights = torch.ones(n, device='cuda', requires_grad=False)
+        input_weights = torch.ones(n, device=utils.primary_device, requires_grad=False)
 
         input_weights_sum = torch.sum(input_weights)
         
@@ -50,7 +51,7 @@ class ModelForest():
             print()
             print('preparing input weights')
             
-            running_current_weights = torch.empty((0), device='cuda', requires_grad=False)  # empty tensor to store running current_weights
+            running_current_weights = torch.empty((0), device=utils.primary_device, requires_grad=False)  # empty tensor to store running current_weights
 
 
             for j in range(i):  # all models from 0 to (i-1)
@@ -62,10 +63,10 @@ class ModelForest():
                 print('\rmodel ', j, ' / ', i, end='')
                 print()
 
-                running_current_weights = torch.empty((0), device='cuda', requires_grad=False)  # empty tensor to store running current_weights
+                running_current_weights = torch.empty((0), device=utils.primary_device, requires_grad=False)  # empty tensor to store running current_weights
 
                 model = self.trees[j]
-                model.root.to('cuda')
+                model.root.to(utils.primary_device)
                 for k in range(0, n, batch_size):
                     print('\rbatch ', k / batch_size, ' / ', n / batch_size, end='')
 
@@ -81,8 +82,8 @@ class ModelForest():
                     knn_indices, _ = torch.sort(knn_indices, descending=False)
                     knn_indices = knn_indices.type(dtype=torch.long)
                     knns = torch.index_select(X, 0, knn_indices)
-                    map_vector = torch.zeros(n, device='cuda', dtype=torch.long)
-                    nks_vector = torch.arange(knn_indices.shape[0], device='cuda', dtype=torch.long)
+                    map_vector = torch.zeros(n, device=utils.primary_device, dtype=torch.long)
+                    nks_vector = torch.arange(knn_indices.shape[0], device=utils.primary_device, dtype=torch.long)
                     map_vector = torch.scatter(map_vector, 0, knn_indices, nks_vector)
                     del nks_vector
                     
@@ -159,20 +160,20 @@ class ModelForest():
 
 
 
-        query_bins = torch.empty((self.n_trees, Q.shape[0], bin_count_param), device='cuda')
+        query_bins = torch.empty((self.n_trees, Q.shape[0], bin_count_param), device=utils.primary_device)
 
-        scores = torch.empty((self.n_trees, Q.shape[0]), device='cuda')
+        scores = torch.empty((self.n_trees, Q.shape[0]), device=utils.primary_device)
 
-        dataset_bins = torch.empty((self.n_trees, self.n_points, 1), device='cuda')
+        dataset_bins = torch.empty((self.n_trees, self.n_points, 1), device=utils.primary_device)
 
 
         for (i, model_tree) in enumerate(self.trees):
 
             model_query_bins, model_scores = model_tree.train_model_tree_or_infer(None, None, Q, None, None, None, train_mode=False, batch_size=batch_size, bin_count=bin_count_param, models_path=models_path)
 
-            query_bins[i] =  model_query_bins.to('cuda')
-            scores[i] = model_scores.to('cuda')
-            dataset_bins[i] = model_tree.assigned_bins.to('cuda')
+            query_bins[i] =  model_query_bins.to(utils.primary_device)
+            scores[i] = model_scores.to(utils.primary_device)
+            dataset_bins[i] = model_tree.assigned_bins.to(utils.primary_device)
 
 
             # scores = (n_models, n, 1) -> tells score of first bin only

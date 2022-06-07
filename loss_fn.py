@@ -1,8 +1,9 @@
-from numpy import dtype
 import torch
 import torch.nn as nn
 
 import torch.nn.functional as F
+
+import utils
 
 
 class MyLoss(nn.Module):
@@ -16,7 +17,7 @@ class MyLoss(nn.Module):
     '''
     weights has shape (n), multiply loss of point i with weights[i]
     '''
-    def forward(self, outputs, y, weights, calculate_add = True, org_n = None, calculate_booster_weights=False, n_bins=-1, confidence_scores=None):
+    def forward(self, outputs, y, weights, calculate_add = True, calculate_booster_weights=False, n_bins=-1):
 
         
 
@@ -31,7 +32,7 @@ class MyLoss(nn.Module):
 
         batch_size = y.shape[0] # figuring out batch size from size of knn matrix
 
-        outputs = outputs.to('cuda')
+        outputs = outputs.to(utils.primary_device)
 
         
 
@@ -125,9 +126,6 @@ class MyLoss(nn.Module):
         pass
         
         # 2: bins distribution
-
-        target_b = batch_size / n_bins
-
 
         batch_outputs = outputs[:batch_size, :]
 

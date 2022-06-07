@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 import torch
 from treenode import TreeNode
+import utils
 
 
 
@@ -200,10 +201,10 @@ class ModelTree():
                     model_labels = torch.index_select(Y, 0, model_input_indices_wrt_X)
 
 
-                    nks_vector = torch.arange(model_input.shape[0], device='cuda', dtype=torch.long)
+                    nks_vector = torch.arange(model_input.shape[0], device=utils.primary_device, dtype=torch.long)
 
-                    # map_vector = torch.zeros(X.shape[0], device='cuda', dtype=torch.long)
-                    map_vector = torch.full((X.shape[0],), -1, device='cuda', dtype=torch.long) # there will be -1s where there is no mapping
+                    # map_vector = torch.zeros(X.shape[0], device=utils.primary_device, dtype=torch.long)
+                    map_vector = torch.full((X.shape[0],), -1, device=utils.primary_device, dtype=torch.long) # there will be -1s where there is no mapping
 
                     map_vector = torch.scatter(map_vector, 0, model_input_indices_wrt_X, nks_vector)
 
@@ -301,7 +302,7 @@ class ModelTree():
 
 
 
-                outputs = torch.empty(0, device='cuda')
+                outputs = torch.empty(0, device=utils.primary_device)
                 n_x = model_input.shape[0]
 
                 for k in range(0, n_x, batch_size):
@@ -387,11 +388,11 @@ class ModelTree():
 
             # batch leaf input
 
-            bins = torch.empty(0, device='cuda', dtype=torch.long)
+            bins = torch.empty(0, device=utils.primary_device, dtype=torch.long)
 
             leaf.to(self.primary_device)
             torch.cuda.empty_cache()
-            scores = torch.empty(0, device='cuda', dtype=torch.long)
+            scores = torch.empty(0, device=utils.primary_device, dtype=torch.long)
             n_leaf = leaf_input.shape[0]
             for k in range(0, n_leaf, batch_size):
                 
