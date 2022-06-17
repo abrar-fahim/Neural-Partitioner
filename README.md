@@ -1,6 +1,6 @@
 # Neural-Partitioner
 
-This repository contains code for the paper labelled "Unsupervised Space Partitioning for Nearest Neighbor Search" by Abrar Fahim, [Mohammed Eunus Ali](https://sites.google.com/site/mohammedeunusali/), [Muhammad Aamir Cheema](http://www.aamircheema.com/).
+This repository contains code for the paper [Unsupervised Space Partitioning for Nearest Neighbor Search](https://arxiv.org/abs/2206.08091) by Abrar Fahim, [Mohammed Eunus Ali](https://sites.google.com/site/mohammedeunusali/), [Muhammad Aamir Cheema](http://www.aamircheema.com/).
 
 ## Code Organization
 
